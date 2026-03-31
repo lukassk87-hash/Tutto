@@ -1,6 +1,6 @@
 {
   "appId": "de.tutto.app",
-  "appName": "Pokemon",
+  "appName": "Tutto",
   "webDir": "www",
   "bundledWebRuntime": false
 }
