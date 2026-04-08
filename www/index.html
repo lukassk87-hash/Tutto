@@ -2,15 +2,26 @@
 <html lang="de">
 <head>
   <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>Punkteblock</title>
-  <link rel="stylesheet" href="tutto.css" />
+  <link rel="stylesheet" href="./styles/app.css" />
 </head>
 <body>
-  <div class="page">
-    <div id="app"></div>
-  </div>
+  <a class="skip-link" href="#app">Zum Inhalt</a>
 
-  <script src="tutto.js"></script>
+  <main class="page">
+    <div id="app" class="app-root" aria-live="polite"></div>
+  </main>
+
+  <script src="./js/core.js"></script>
+  <script src="./js/config.js"></script>
+  <script src="./js/utils.js"></script>
+  <script src="./js/state.js"></script>
+  <script src="./js/rules.js"></script>
+  <script src="./js/actions.js"></script>
+  <script src="./js/ai.js"></script>
+  <script src="./js/render.js"></script>
+  <script src="./js/events.js"></script>
+  <script src="./js/main.js"></script>
 </body>
 </html>
