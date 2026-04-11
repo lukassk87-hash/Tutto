@@ -30,7 +30,7 @@
     return Math.max(...state.players.map((player) => player.score));
   };
 
-  app.ai.estimateSuccessChance = function (state) {
+app.ai.estimateSuccessChance = function (state) {
   if (state.phase !== 'playing') return 0;
   if (
     state.diceTurn.showCardModal ||
@@ -40,17 +40,39 @@
 
   const key = state.diceTurn.activeCardKey;
 
+  // Sonderkartenregel bleibt
   if (key === 'clover') return 1;
   if (key === 'firework') return 1;
   if (key === 'straight') return 1;
   if (key === 'plusminus') return 1;
 
-  return 0.55;
+  const current = state.players[state.currentIndex];
+  const roundPoints = state.diceTurn.turnPoints || 0;
+  const currentScore = current.score || 0;
+  const projectedScore = currentScore + roundPoints;
+  const leaderScore = app.ai.getLeaderScore(state);
+  const deficit = leaderScore - projectedScore;
+  const WIN_SCORE = 6000;
+
+  if (projectedScore >= WIN_SCORE) return 0;
+
+  if (roundPoints < 150) return 0.95;
+
+  if (roundPoints < 250) {
+    return deficit >= 0 && deficit < 1000 ? 0.72 : 0.18;
+  }
+
+  if (roundPoints < 350) {
+    return deficit > 1000 ? 0.66 : 0.15;
+  }
+
+  return 0.05;
 };
 
-  app.ai.shouldTakeRisk = function (state) {
+app.ai.shouldTakeRisk = function (state) {
   const key = state.diceTurn.activeCardKey;
 
+  // Sonderkartenregel bleibt
   if (key === 'firework') return true;
   if (key === 'plusminus') return true;
   if (key === 'straight') return true;
@@ -60,8 +82,16 @@
 };
 
 app.ai.shouldContinueRound = function (state) {
+  if (state.phase !== 'playing') return false;
+  if (
+    state.diceTurn.showCardModal ||
+    state.diceTurn.showFarkleModal ||
+    state.diceTurn.showContinueRoundModal
+  ) return false;
+
   const key = state.diceTurn.activeCardKey;
 
+  // Sonderkartenregel bleibt
   if (key === 'firework') return true;
   if (key === 'plusminus') return true;
   if (key === 'straight') return true;
@@ -69,22 +99,29 @@ app.ai.shouldContinueRound = function (state) {
 
   const current = state.players[state.currentIndex];
   const roundPoints = state.diceTurn.turnPoints || 0;
-  const projectedScore = current.score + roundPoints;
+  const currentScore = current.score || 0;
+  const projectedScore = currentScore + roundPoints;
   const leaderScore = app.ai.getLeaderScore(state);
-  const deficitAfterCurrentRound = leaderScore - projectedScore;
+  const deficit = leaderScore - projectedScore;
+  const WIN_SCORE = 6000;
 
-  if (roundPoints < 250) return true;
+  if (projectedScore >= WIN_SCORE) return false;
 
-  if (roundPoints < 500) {
-    return deficitAfterCurrentRound > 0;
+  if (roundPoints < 150) return true;
+
+  if (roundPoints < 200) {
+    return deficit >= 0 && deficit < 1000;
   }
 
-  if (roundPoints <= 750) {
-    return deficitAfterCurrentRound >= 1000;
+  if (roundPoints < 250) {
+    return deficit > 1000;
   }
 
   return false;
 };
+
+
+
 
   app.ai.getStraightTarget = function (state) {
     const locked = [...(state.diceTurn.straightLockedValues || [])].sort((a, b) => a - b);
