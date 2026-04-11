@@ -108,23 +108,23 @@
     app.actions.resetDiceTurn(state, true);
   };
 
- app.actions.startGame = function (state) {
-  app.actions.clearEffects(state);
-  state.players = state.players.map((player, index) => ({
-    name: (player.name || `Spieler ${index + 1}`).trim() || `Spieler ${index + 1}`,
-    score: 0,
-    isComputer: !!player.isComputer
-  }));
-  state.phase = 'playing';
-  state.currentIndex = 0;
-  state.winnerIndex = null;
-  state.undoStack = [];
-  state.diceTurn = app.state.createDiceTurn();
+  app.actions.startGame = function (state) {
+    app.actions.clearEffects(state);
+    state.players = state.players.map((player, index) => ({
+      name: (player.name || `Spieler ${index + 1}`).trim() || `Spieler ${index + 1}`,
+      score: 0,
+      isComputer: !!player.isComputer
+    }));
+    state.phase = 'playing';
+    state.currentIndex = 0;
+    state.winnerIndex = null;
+    state.undoStack = [];
+    state.diceTurn = app.state.createDiceTurn();
 
-  if (app.actions.cardsEnabledForCurrentMode(state)) {
-    app.actions.drawCardForRound(state);
-  }
-};
+    if (app.actions.cardsEnabledForCurrentMode(state)) {
+      app.actions.drawCardForRound(state);
+    }
+  };
 
   app.actions.backToSetup = function (state) {
     app.actions.clearEffects(state);
@@ -139,23 +139,23 @@
     state.diceTurn = app.state.createDiceTurn();
   };
 
-app.actions.newGameSamePlayers = function (state) {
-  app.actions.clearEffects(state);
-  state.phase = 'playing';
-  state.currentIndex = 0;
-  state.winnerIndex = null;
-  state.players = state.players.map((player) => ({
-    name: player.name,
-    score: 0,
-    isComputer: !!player.isComputer
-  }));
-  state.undoStack = [];
-  state.diceTurn = app.state.createDiceTurn();
+  app.actions.newGameSamePlayers = function (state) {
+    app.actions.clearEffects(state);
+    state.phase = 'playing';
+    state.currentIndex = 0;
+    state.winnerIndex = null;
+    state.players = state.players.map((player) => ({
+      name: player.name,
+      score: 0,
+      isComputer: !!player.isComputer
+    }));
+    state.undoStack = [];
+    state.diceTurn = app.state.createDiceTurn();
 
-  if (app.actions.cardsEnabledForCurrentMode(state)) {
-    app.actions.drawCardForRound(state);
-  }
-};
+    if (app.actions.cardsEnabledForCurrentMode(state)) {
+      app.actions.drawCardForRound(state);
+    }
+  };
 
   app.actions.addPoints = function (state, amount) {
     if (
@@ -326,67 +326,112 @@ app.actions.newGameSamePlayers = function (state) {
     }
   };
 
-app.actions.handleAllDiceScoredBonus = function (state) {
-  const key = state.diceTurn.activeCardKey;
+  app.actions.getBankableDiceTurnTotal = function (state) {
+    let total = state.diceTurn.turnPoints || 0;
 
-  if (key === 'plusminus') {
-    state.diceTurn.turnPoints = 0;
-    const finished = app.actions.applyPlusMinusEffect(state);
-    if (!finished) {
-      app.actions.endTurnAndPrepareNext(state);
+    if (state.diceTurn.straightMode) {
+      return total;
     }
-    return;
-  }
 
-  let bonus = app.actions.getExtraBonusValueFromCard(key);
-  if (key === 'double') bonus = state.diceTurn.turnPoints;
-  if (bonus > 0) state.diceTurn.turnPoints += bonus;
+    if (!state.diceTurn.hasRolled) {
+      return total;
+    }
 
-  if (key === 'clover') {
-    if (state.diceTurn.cloverAwaitingFinalSuccess) {
-      state.players[state.currentIndex].score = state.targetScore;
-      app.actions.finishGame(state, state.currentIndex);
+    const heldIndices = app.rules.getHeldThisRollIndices(state);
+    if (!heldIndices.length) {
+      return total;
+    }
+
+    const check = app.rules.isHeldSelectionValidForCurrentRoll(state);
+    if (!check.valid) {
+      return null;
+    }
+
+    total += check.score;
+
+    const wouldLockAllDice = state.diceTurn.lockedFromPreviousRoll.map(
+      (locked, index) => locked || heldIndices.includes(index)
+    );
+
+    const allFiveConverted = wouldLockAllDice.every(Boolean);
+
+    if (allFiveConverted) {
+      const key = state.diceTurn.activeCardKey;
+      let bonus = app.actions.getExtraBonusValueFromCard(key);
+
+      if (key === 'double') {
+        bonus = total;
+      }
+
+      if (bonus > 0) {
+        total += bonus;
+      }
+    }
+
+    return total;
+  };
+
+  app.actions.handleAllDiceScoredBonus = function (state) {
+    const key = state.diceTurn.activeCardKey;
+
+    if (key === 'plusminus') {
+      state.diceTurn.turnPoints = 0;
+      const finished = app.actions.applyPlusMinusEffect(state);
+      if (!finished) {
+        app.actions.endTurnAndPrepareNext(state);
+      }
       return;
     }
 
-    state.diceTurn.cloverAwaitingFinalSuccess = true;
-    state.diceTurn.cloverStarterPlayerIndex = state.currentIndex;
+    let bonus = app.actions.getExtraBonusValueFromCard(key);
+    if (key === 'double') bonus = state.diceTurn.turnPoints;
+    if (bonus > 0) state.diceTurn.turnPoints += bonus;
+
+    if (key === 'clover') {
+      if (state.diceTurn.cloverAwaitingFinalSuccess) {
+        state.players[state.currentIndex].score = state.targetScore;
+        app.actions.finishGame(state, state.currentIndex);
+        return;
+      }
+
+      state.diceTurn.cloverAwaitingFinalSuccess = true;
+      state.diceTurn.cloverStarterPlayerIndex = state.currentIndex;
+      state.diceTurn.hotDiceCompletedOnce = true;
+      state.diceTurn.cardOfferPending = false;
+      state.diceTurn.pendingCardKey = null;
+      state.diceTurn.showCardModal = false;
+      state.diceTurn.awaitingCardConfirmation = false;
+      state.diceTurn.showContinueRoundModal = false;
+      state.diceTurn.hasRolled = false;
+      state.diceTurn.lastRollIndices = [];
+      state.diceTurn.invalidHoldMessage = '';
+
+      app.actions.prepareFreshFiveDiceAfterHotDice(state);
+      return;
+    }
+
+    if (key === 'firework') {
+      state.diceTurn.hotDiceCompletedOnce = true;
+      state.diceTurn.cardOfferPending = false;
+      state.diceTurn.pendingCardKey = null;
+      state.diceTurn.showCardModal = false;
+      state.diceTurn.awaitingCardConfirmation = false;
+      state.diceTurn.showContinueRoundModal = false;
+      state.diceTurn.hasRolled = false;
+      state.diceTurn.lastRollIndices = [];
+      state.diceTurn.invalidHoldMessage = '';
+
+      app.actions.prepareFreshFiveDiceAfterHotDice(state);
+      return;
+    }
+
     state.diceTurn.hotDiceCompletedOnce = true;
     state.diceTurn.cardOfferPending = false;
     state.diceTurn.pendingCardKey = null;
     state.diceTurn.showCardModal = false;
     state.diceTurn.awaitingCardConfirmation = false;
-    state.diceTurn.showContinueRoundModal = false;
-    state.diceTurn.hasRolled = false;
-    state.diceTurn.lastRollIndices = [];
-    state.diceTurn.invalidHoldMessage = '';
-
-    app.actions.prepareFreshFiveDiceAfterHotDice(state);
-    return;
-  }
-
-  if (key === 'firework') {
-    state.diceTurn.hotDiceCompletedOnce = true;
-    state.diceTurn.cardOfferPending = false;
-    state.diceTurn.pendingCardKey = null;
-    state.diceTurn.showCardModal = false;
-    state.diceTurn.awaitingCardConfirmation = false;
-    state.diceTurn.showContinueRoundModal = false;
-    state.diceTurn.hasRolled = false;
-    state.diceTurn.lastRollIndices = [];
-    state.diceTurn.invalidHoldMessage = '';
-
-    app.actions.prepareFreshFiveDiceAfterHotDice(state);
-    return;
-  }
-
-  state.diceTurn.hotDiceCompletedOnce = true;
-  state.diceTurn.cardOfferPending = false;
-  state.diceTurn.pendingCardKey = null;
-  state.diceTurn.showCardModal = false;
-  state.diceTurn.awaitingCardConfirmation = false;
-  state.diceTurn.showContinueRoundModal = true;
-};
+    state.diceTurn.showContinueRoundModal = true;
+  };
 
   app.actions.handleCloverFailureIfNeeded = function (state) {
     if (!state.diceTurn.cloverArmed) return;
@@ -532,60 +577,60 @@ app.actions.handleAllDiceScoredBonus = function (state) {
     });
   };
 
-app.actions.rollStraightTurn = function (state) {
-  if (state.diceTurn.hasRolled) {
-    const check = app.rules.validateStraightHold(state);
-    if (!check.valid) {
-      state.diceTurn.invalidHoldMessage = check.message;
+  app.actions.rollStraightTurn = function (state) {
+    if (state.diceTurn.hasRolled) {
+      const check = app.rules.validateStraightHold(state);
+      if (!check.valid) {
+        state.diceTurn.invalidHoldMessage = check.message;
+        return;
+      }
+
+      app.state.pushUndoState(state);
+      const result = app.actions.lockStraightDice(state);
+
+      if (result === 'invalid') {
+        return;
+      }
+
+      if (result === 'done') {
+        state.diceTurn.canBank = true;
+        state.diceTurn.hotDiceCompletedOnce = true;
+        state.diceTurn.showContinueRoundModal = true;
+        return;
+      }
+    } else {
+      app.state.pushUndoState(state);
+    }
+
+    const free = state.diceTurn.held
+      .map((held, index) => (!held ? index : -1))
+      .filter((index) => index !== -1);
+
+    if (!free.length) {
+      state.diceTurn.invalidHoldMessage = 'Keine Würfel mehr zum Würfeln.';
       return;
     }
 
-    app.state.pushUndoState(state);
-    const result = app.actions.lockStraightDice(state);
+    free.forEach((index) => {
+      state.diceTurn.dice[index] = app.utils.rollDie();
+      state.diceTurn.held[index] = false;
+    });
 
-    if (result === 'invalid') {
+    state.diceTurn.lastRollIndices = [...free];
+    state.diceTurn.hasRolled = true;
+    state.diceTurn.invalidHoldMessage = '';
+
+    if (
+      app.rules.isFullStraight(state.diceTurn.straightLockedValues) ||
+      app.actions.canStillReachStraightFromCurrentDice(state)
+    ) {
       return;
     }
 
-    if (result === 'done') {
-      state.diceTurn.canBank = true;
-      state.diceTurn.hotDiceCompletedOnce = true;
-      state.diceTurn.showContinueRoundModal = true;
-      return;
-    }
-  } else {
-    app.state.pushUndoState(state);
-  }
-
-  const free = state.diceTurn.held
-    .map((held, index) => (!held ? index : -1))
-    .filter((index) => index !== -1);
-
-  if (!free.length) {
-    state.diceTurn.invalidHoldMessage = 'Keine Würfel mehr zum Würfeln.';
-    return;
-  }
-
-  free.forEach((index) => {
-    state.diceTurn.dice[index] = app.utils.rollDie();
-    state.diceTurn.held[index] = false;
-  });
-
-  state.diceTurn.lastRollIndices = [...free];
-  state.diceTurn.hasRolled = true;
-  state.diceTurn.invalidHoldMessage = '';
-
-  if (
-    app.rules.isFullStraight(state.diceTurn.straightLockedValues) ||
-    app.actions.canStillReachStraightFromCurrentDice(state)
-  ) {
-    return;
-  }
-
-  state.diceTurn.invalidHoldMessage =
-    'Mit diesem Wurf kann die Straße nicht mehr sinnvoll erweitert werden.';
-  state.diceTurn.showFarkleModal = true;
-};
+    state.diceTurn.invalidHoldMessage =
+      'Mit diesem Wurf kann die Straße nicht mehr sinnvoll erweitert werden.';
+    state.diceTurn.showFarkleModal = true;
+  };
 
   app.actions.rollNormalDiceTurn = function (state) {
     if (state.diceTurn.hasRolled) {
@@ -666,23 +711,23 @@ app.actions.rollStraightTurn = function (state) {
       return;
     }
 
-    let total = state.diceTurn.turnPoints;
+    let total = 0;
 
     if (state.diceTurn.straightMode) {
+      total = state.diceTurn.turnPoints;
       if (total !== 2000) {
         state.diceTurn.invalidHoldMessage =
           'Für die Straßenkarte musst du die Straße vollständig schaffen.';
         return;
       }
-    } else if (state.diceTurn.hasRolled) {
-      const check = app.rules.isHeldSelectionValidForCurrentRoll(state);
-      if (app.rules.getHeldThisRollIndices(state).length > 0) {
-        if (!check.valid) {
-          state.diceTurn.invalidHoldMessage = check.message;
-          return;
-        }
-        total += check.score;
+    } else {
+      const computedTotal = app.actions.getBankableDiceTurnTotal(state);
+      if (computedTotal === null) {
+        const check = app.rules.isHeldSelectionValidForCurrentRoll(state);
+        state.diceTurn.invalidHoldMessage = check.message;
+        return;
       }
+      total = computedTotal;
     }
 
     if (total <= 0) return;
