@@ -1,6 +1,11 @@
 (function (app) {
-  const STRAIGHT_A = [1, 2, 3, 4, 5];
-  const STRAIGHT_B = [2, 3, 4, 5, 6];
+  function uniqueValues(values) {
+    return [...new Set(values)];
+  }
+
+  function hasDuplicates(values) {
+    return uniqueValues(values).length !== values.length;
+  }
 
   app.rules.getSelectionScoreFromValues = function (values) {
     if (!values.length) return 0;
@@ -102,76 +107,130 @@
     return state.diceTurn.lockedFromPreviousRoll.every(Boolean);
   };
 
-  app.rules.isFullStraight = function (values) {
-    if (values.length !== 5) return false;
-
-    const sorted = [...values].sort((a, b) => a - b).join(',');
-    return sorted === '1,2,3,4,5' || sorted === '2,3,4,5,6';
+  app.rules.getStraightLockedValues = function (state) {
+    return Array.isArray(state.diceTurn.straightLockedValues)
+      ? [...state.diceTurn.straightLockedValues]
+      : [];
   };
 
-  app.rules.getPossibleStraightTargets = function (values) {
-    const unique = app.utils.getSortedUnique(values);
-
-    return [STRAIGHT_A, STRAIGHT_B].filter((target) =>
-      unique.every((v) => target.includes(v))
-    );
+  app.rules.getStraightHeldValuesThisRoll = function (state) {
+    return app.rules.getHeldValuesThisRoll(state);
   };
 
-  app.rules.determineStraightTarget = function (values) {
-    const candidates = app.rules.getPossibleStraightTargets(values);
-    return candidates.length === 1 ? candidates[0] : null;
+  app.rules.getStraightCombinedValues = function (state, extraValues) {
+    return [
+      ...app.rules.getStraightLockedValues(state),
+      ...(extraValues || [])
+    ];
   };
 
-  app.rules.validateStraightHold = function (state) {
-    const heldIndices = app.rules.getHeldThisRollIndices(state);
-    const heldValues = heldIndices.map((index) => state.diceTurn.dice[index]);
-
-    if (!heldValues.length) {
+  app.rules.isStraightCombinationValid = function (values) {
+    if (!values.length) {
       return {
         valid: false,
-        message: 'Du musst mindestens einen Würfel für die Straße halten.'
+        message: 'Du musst mindestens einen Würfel für die Straße halten.',
+        score: 0,
+        complete: false
       };
     }
 
-    const lockedValues = state.diceTurn.straightLockedValues || [];
-    const combined = [...lockedValues, ...heldValues];
-    const uniqueCombined = app.utils.getSortedUnique(combined);
-
-    let candidates;
-
-    if (state.diceTurn.straightTarget) {
-      const target = state.diceTurn.straightTarget;
-      const stillFits = uniqueCombined.every((v) => target.includes(v));
-      candidates = stillFits ? [target] : [];
-    } else {
-      candidates = app.rules.getPossibleStraightTargets(combined);
-    }
-
-    if (!candidates.length) {
+    if (hasDuplicates(values)) {
       return {
         valid: false,
-        message: 'Diese Würfel passen nicht mehr zur begonnenen Straße.'
+        message: 'Ein gleichwertiger Würfel darf für die Straße nicht mehrfach gehalten werden.',
+        score: 0,
+        complete: false
       };
     }
 
-    const newlyAddedUseful = heldValues.some((value) => {
-      if (lockedValues.includes(value)) return false;
-      return candidates.some((target) => target.includes(value));
-    });
+    const unique = uniqueValues(values);
 
-    if (!newlyAddedUseful) {
+    if (unique.includes(1) && unique.includes(6)) {
       return {
         valid: false,
-        message: 'Du musst mindestens einen Würfel halten, der die Straße erweitert.'
+        message: 'Für die Straße dürfen 1 und 6 nicht gleichzeitig gehalten werden.',
+        score: 0,
+        complete: false
       };
     }
 
-    const target = candidates.length === 1 ? candidates[0] : null;
+    const complete = unique.length === 5;
 
     return {
       valid: true,
       message: '',
-      target
+      score: complete ? 2000 : 0,
+      complete
     };
   };
-})(window.Punkteblock); 
+
+  app.rules.validateStraightHold = function (state) {
+    const heldValues = app.rules.getStraightHeldValuesThisRoll(state);
+
+    if (!heldValues.length) {
+      return {
+        valid: false,
+        message: 'Du musst mindestens einen Würfel für die Straße halten.',
+        score: 0,
+        complete: false
+      };
+    }
+
+    const lockedValues = app.rules.getStraightLockedValues(state);
+    const combined = [...lockedValues, ...heldValues];
+    const result = app.rules.isStraightCombinationValid(combined);
+
+    if (!result.valid) return result;
+
+    const newUniqueHeld = uniqueValues(heldValues).filter(
+      (value) => !lockedValues.includes(value)
+    );
+
+    if (!newUniqueHeld.length) {
+      return {
+        valid: false,
+        message: 'Du musst die Straße mit mindestens einem neuen Wert erweitern.',
+        score: 0,
+        complete: false
+      };
+    }
+
+    return result;
+  };
+
+  app.rules.canStraightBeExtendedFromRoll = function (state) {
+    const lockedValues = app.rules.getStraightLockedValues(state);
+    const rollValues = app.rules
+      .getCurrentUnlockedRollIndices(state)
+      .map((index) => state.diceTurn.dice[index]);
+
+    if (!rollValues.length) return false;
+
+    const uniqueRollValues = uniqueValues(rollValues);
+
+    return uniqueRollValues.some((value) => {
+      if (lockedValues.includes(value)) return false;
+      return app.rules.isStraightCombinationValid([...lockedValues, value]).valid;
+    });
+  };
+
+  app.rules.getStraightExtendableValuesFromRoll = function (state) {
+    const lockedValues = app.rules.getStraightLockedValues(state);
+    const rollValues = app.rules
+      .getCurrentUnlockedRollIndices(state)
+      .map((index) => state.diceTurn.dice[index]);
+
+    return uniqueValues(rollValues).filter((value) => {
+      if (lockedValues.includes(value)) return false;
+      return app.rules.isStraightCombinationValid([...lockedValues, value]).valid;
+    });
+  };
+
+  app.rules.isFullStraight = function (values) {
+    return app.rules.isStraightCombinationValid(values).complete === true;
+  };
+
+  app.rules.getStraightScore = function (values) {
+    return app.rules.isFullStraight(values) ? 2000 : 0;
+  };
+})(window.Punkteblock);
