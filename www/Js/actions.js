@@ -256,8 +256,8 @@
 
     if (key === 'straight') {
       state.diceTurn.straightMode = true;
-      state.diceTurn.straightTarget = null;
       state.diceTurn.straightLockedValues = [];
+      state.diceTurn.straightTarget = null;
     }
 
     if (key === 'clover') {
@@ -487,29 +487,26 @@
       return 'invalid';
     }
 
-    state.diceTurn.straightTarget = validation.target;
-
     heldIndices.forEach((index) => {
       state.diceTurn.lockedFromPreviousRoll[index] = true;
     });
 
-    heldValues.forEach((value) => {
-      if (!state.diceTurn.straightLockedValues.includes(value)) {
-        state.diceTurn.straightLockedValues.push(value);
-      }
-    });
+    state.diceTurn.straightLockedValues = [
+      ...new Set([
+        ...state.diceTurn.straightLockedValues,
+        ...heldValues
+      ])
+    ];
 
     state.diceTurn.lastRollIndices = [];
     state.diceTurn.hasRolled = false;
     state.diceTurn.invalidHoldMessage = '';
+    state.diceTurn.canBank = false;
+    state.diceTurn.hotDice = false;
 
-    if (
-      state.diceTurn.straightLockedValues.length === 5 &&
-      app.rules.isFullStraight(state.diceTurn.straightLockedValues)
-    ) {
+    if (app.rules.isFullStraight(state.diceTurn.straightLockedValues)) {
       state.diceTurn.turnPoints = 2000;
       state.diceTurn.canBank = true;
-      state.diceTurn.hotDice = false;
       return 'done';
     }
 
@@ -528,53 +525,15 @@
       (index) => !state.diceTurn.lockedFromPreviousRoll[index]
     );
 
-    const lockedValues = [...state.diceTurn.straightLockedValues];
-    const currentRollValues = state.diceTurn.lastRollIndices.map((i) => state.diceTurn.dice[i]);
-
-    const currentTarget = state.diceTurn.straightTarget
-      ? [...state.diceTurn.straightTarget]
-      : app.rules.determineStraightTarget(
-          lockedValues.length ? lockedValues : currentRollValues
-        );
-
-    if (!currentTarget) return [];
-
-    const missingValues = currentTarget.filter(
-      (value) => !lockedValues.includes(value)
-    );
+    const usefulValues = app.rules.getStraightExtendableValuesFromRoll(state);
 
     return rolledIndices.filter((index) =>
-      missingValues.includes(state.diceTurn.dice[index])
+      usefulValues.includes(state.diceTurn.dice[index])
     );
   };
 
   app.actions.canStillReachStraightFromCurrentDice = function (state) {
-    const rolledIndices = state.diceTurn.lastRollIndices.filter(
-      (index) => !state.diceTurn.lockedFromPreviousRoll[index]
-    );
-
-    const lockedValues = [...state.diceTurn.straightLockedValues];
-    const targets = [];
-
-    if (!lockedValues.length) {
-      targets.push([1, 2, 3, 4, 5]);
-      targets.push([2, 3, 4, 5, 6]);
-    } else {
-      const target =
-        state.diceTurn.straightTarget ||
-        app.rules.determineStraightTarget(lockedValues);
-      if (target) targets.push(target);
-    }
-
-    return targets.some((target) => {
-      const missingValues = target.filter(
-        (value) => !lockedValues.includes(value)
-      );
-      if (!missingValues.length) return true;
-      return rolledIndices.some((index) =>
-        missingValues.includes(state.diceTurn.dice[index])
-      );
-    });
+    return app.rules.canStraightBeExtendedFromRoll(state);
   };
 
   app.actions.rollStraightTurn = function (state) {
